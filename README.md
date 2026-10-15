@@ -2,6 +2,13 @@
 
 읽기 전용 P0 관리자 화면입니다. 기존 Spring Boot API를 `/api/v1` 경로로 사용합니다.
 
+## 운영 배포
+
+- 주소: [admin.hankkt.site](https://admin.hankkt.site)
+- Vercel 프로젝트: `hankkt-admin` (GitHub `main` 브랜치)
+- DNS: 가비아 `hankkt.site`의 `admin` CNAME을 Vercel 프로젝트 도메인 설정에서 안내하는 값에 연결합니다. 기존 `api` 레코드는 유지합니다.
+- `vercel.json`의 같은 출처 `/api` 재작성 규칙을 통해 운영 API에 연결합니다. 관리자 인증 쿠키는 브라우저에 `HttpOnly; Secure; SameSite=Strict`로 저장됩니다.
+
 ## 로컬 실행
 
 1. 이 폴더에서 `npm ci` 후 `npm run dev`를 실행합니다.
