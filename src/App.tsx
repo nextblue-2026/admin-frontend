@@ -1,23 +1,17 @@
 import { useEffect, useState } from 'react'
+import { AppLink, useLocation } from './navigation'
+import { MembersView, MemberDetailView } from './MemberViews'
+import { PostsView, PostDetailView, postSections } from './PostViews'
+import type { PostSection } from './PostViews'
+import { number, date, isUuid, eventName, Status, Loading, ErrorState, Empty, Pager } from './ui'
 import { ApiRequestError, api, clearSmsChallenge, logout, pendingSmsChallenge, requestSms, resumeSession, verifySms } from './api'
-import type { Activity, Audit, Dashboard, Member, MemberDetail, Page, Report, UserActivity } from './api'
+import type { Audit, Dashboard, Page, Report, UserActivity } from './api'
 
-type Section = 'dashboard' | 'members' | 'reports' | 'audit'
-const number = (value: number) => new Intl.NumberFormat('ko-KR').format(value)
-const date = (value: string) => new Intl.DateTimeFormat('ko-KR', { dateStyle: 'medium', timeStyle: 'short', timeZone: 'Asia/Seoul' }).format(new Date(value))
 const percent = (value: number | null | undefined) => value == null ? '—' : `${value.toFixed(1)}%`
 const queryString = (filters: Record<string, string>, page: number) => {
   const params = new URLSearchParams({ page: String(page) })
   Object.entries(filters).forEach(([key, value]) => { if (value.trim()) params.set(key, value.trim()) })
   return params.toString()
-}
-const isUuid = (value: string) => /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(value.trim())
-const memberStatus: Record<string, string> = { ACTIVE: '활성', WITHDRAWAL_PENDING: '탈퇴 대기', WITHDRAWN: '탈퇴 완료' }
-const eventName: Record<string, string> = {
-  MEMBER_REGISTERED: '회원가입', LOGIN_SUCCEEDED: '로그인', WITHDRAWAL_REQUESTED: '탈퇴 요청',
-  WITHDRAWAL_CANCELLED: '탈퇴 취소', MATCH_REQUESTED: '매칭 신청', MATCH_ACCEPTED: '매칭 수락',
-  APPOINTMENT_CREATED: '약속 생성', APPOINTMENT_CANCELLED: '약속 취소',
-  TRANSACTION_COMPLETED: '거래 완료', REVIEW_CREATED: '리뷰 등록', REPORT_CREATED: '신고 접수',
 }
 const icon = (name: string) => <span className="nav-icon" aria-hidden="true">{name}</span>
 
@@ -111,42 +105,6 @@ function DashboardView({ days, onDays }: { days: number; onDays: (days: number) 
   </>
 }
 
-function MembersView() {
-  const empty = { query: '', status: '', from: '', to: '' }
-  const [draft, setDraft] = useState(empty)
-  const [filters, setFilters] = useState(empty)
-  const [page, setPage] = useState(0)
-  const [data, setData] = useState<Page<Member> | null>(null)
-  const [selected, setSelected] = useState<MemberDetail | null>(null)
-  const [error, setError] = useState('')
-  useEffect(() => {
-    let live = true
-    setData(null); setError('')
-    api<Page<Member>>(`/members?${queryString(filters, page)}`)
-      .then(value => { if (live) setData(value) })
-      .catch(cause => { if (live) setError(String(cause)) })
-    return () => { live = false }
-  }, [filters, page])
-  function search(event: React.FormEvent) {
-    event.preventDefault()
-    if (draft.from && draft.to && draft.from > draft.to) { setError('가입 시작일이 종료일보다 늦습니다.'); return }
-    setPage(0); setFilters({ ...draft })
-  }
-  async function open(id: string) { setError(''); try { setSelected(await api<MemberDetail>(`/members/${id}`)) } catch (cause) { setError(String(cause)) } }
-  return <><div className="page-head"><div><span className="eyebrow">MEMBERS</span><h1>회원 관리</h1><p>회원 상태와 최근 주요 활동을 조회합니다.</p></div></div>
-    <section className="panel table-panel"><form className="table-tools" onSubmit={search}>
-      <label className="search-input"><span aria-hidden="true">⌕</span><input value={draft.query} onChange={event => setDraft({ ...draft, query: event.target.value })} placeholder="이름 · 아이디 · 회원 UUID" maxLength={80} /></label>
-      <select aria-label="회원 상태" value={draft.status} onChange={event => setDraft({ ...draft, status: event.target.value })}><option value="">전체 상태</option><option value="ACTIVE">활성</option><option value="WITHDRAWAL_PENDING">탈퇴 대기</option><option value="WITHDRAWN">탈퇴 완료</option></select>
-      <label className="date-filter">가입 시작일<input type="date" value={draft.from} onChange={event => setDraft({ ...draft, from: event.target.value })} /></label>
-      <label className="date-filter">가입 종료일<input type="date" value={draft.to} onChange={event => setDraft({ ...draft, to: event.target.value })} /></label>
-      <button className="outline-button">검색</button><button type="button" className="reset-button" onClick={() => { setDraft(empty); setFilters({ ...empty }); setPage(0) }}>초기화</button>
-    </form>
-      {error && <ErrorState message={error} />}{!data && !error && <Loading />}{data && <><div className="table-count">총 <strong>{number(data.total)}</strong>명</div><div className="table-wrap"><table><thead><tr><th>회원</th><th>상태</th><th>동네 코드</th><th>가입일</th><th>상세</th></tr></thead><tbody>{data.items.map(member => <tr key={member.id}><td><b>{member.name}</b><small>@{member.username}</small></td><td><Status value={member.status} label={memberStatus[member.status] || member.status} /></td><td>{member.neighborhoodCode || '—'}</td><td>{date(member.createdAt)}</td><td><button className="row-link" onClick={() => open(member.id)}>보기 →</button></td></tr>)}</tbody></table></div>{!data.items.length && <Empty label="조건에 맞는 회원이 없습니다." />}<Pager page={page} total={data.total} size={data.size} onPage={setPage} /></>}
-    </section>
-    {selected && <div className="drawer-backdrop" onClick={() => setSelected(null)}><aside className="drawer" onClick={event => event.stopPropagation()} aria-label="회원 상세"><div className="drawer-top"><span className="eyebrow">MEMBER DETAIL</span><button onClick={() => setSelected(null)} aria-label="닫기">×</button></div><h2>{selected.member.name}</h2><p>@{selected.member.username}</p><div className="detail-line"><span>계정 상태</span><Status value={selected.member.status} label={memberStatus[selected.member.status] || selected.member.status} /></div><div className="detail-line"><span>회원 ID</span><code>{selected.member.id}</code></div><div className="detail-line"><span>동네 코드</span><b>{selected.member.neighborhoodCode || '—'}</b></div><div className="detail-line"><span>가입일</span><b>{date(selected.member.createdAt)}</b></div><h3>최근 주요 활동</h3>{selected.recentActivity.length ? <div className="timeline">{selected.recentActivity.map((event: Activity) => <div key={event.id}><i /><div><b>{eventName[event.eventType] || event.eventType}</b><small>{date(event.occurredAt)}</small><code>{event.resourceType || '회원'} {event.resourceId || ''}</code></div></div>)}</div> : <Empty label="기록된 주요 활동이 없습니다." />}</aside></div>}
-  </>
-}
-
 function ReportsView() {
   const empty = { query: '', reporterId: '', status: '', targetType: '', from: '', to: '' }
   const [draft, setDraft] = useState(empty)
@@ -224,22 +182,25 @@ function AuditView() {
       {error && <ErrorState message={error} />}{!visibleData && !error && <Loading />}
       {visibleData && <><div className="table-count">총 <strong>{number(visibleData.total)}</strong>건 · {scope === 'ADMIN' ? '관리자 감사 기록' : '일반 회원 주요 활동'}</div>
         <div className="table-wrap"><table><thead><tr><th>발생 시각</th><th>행동</th><th>{scope === 'ADMIN' ? '운영자' : '회원'}</th><th>대상</th></tr></thead><tbody>{scope === 'ADMIN'
-          ? visibleData.items.map(item => { const row = item as Audit; return <tr key={row.id}><td>{date(row.occurredAt)}</td><td>{row.action === 'MEMBER_DETAIL_VIEWED' ? '회원 상세 조회' : row.action === 'REPORT_LIST_VIEWED' ? '신고 목록 조회' : row.action}</td><td><b>{row.actorName}</b><small>@{row.actorUsername} · {row.actorId.slice(0, 8)}…</small></td><td><code title={row.targetId}>{row.targetType} / {row.targetId.slice(0, 8)}…</code></td></tr> })
+          ? visibleData.items.map(item => { const row = item as Audit; return <tr key={row.id}><td>{date(row.occurredAt)}</td><td>{eventName[row.action] || row.action}</td><td><b>{row.actorName}</b><small>@{row.actorUsername} · {row.actorId.slice(0, 8)}…</small></td><td><code title={row.targetId}>{row.targetType} / {row.targetId.slice(0, 8)}…</code></td></tr> })
           : visibleData.items.map(item => { const row = item as UserActivity; return <tr key={row.id}><td>{date(row.occurredAt)}</td><td>{eventName[row.eventType] || row.eventType}</td><td><b>{row.memberName}</b><small>@{row.memberUsername} · {row.memberId.slice(0, 8)}…</small></td><td><code title={row.resourceId || ''}>{row.resourceType || '—'}{row.resourceId ? ` / ${row.resourceId.slice(0, 8)}…` : ''}</code></td></tr> })}</tbody></table></div>
         {!visibleData.items.length && <Empty label="조건에 맞는 로그가 없습니다." />}<Pager page={page} total={visibleData.total} size={visibleData.size} onPage={setPage} /></>}
     </section>
   </>
 }
 
-function Status({ value, label }: { value: string; label: string }) { return <span className={`status status-${value.toLowerCase()}`}>{label}</span> }
-function Loading() { return <div className="loading" role="status">데이터를 불러오는 중입니다…</div> }
-function ErrorState({ message }: { message: string }) { return <div className="error-state" role="alert">{message}</div> }
-function Empty({ label }: { label: string }) { return <div className="empty-state">{label}</div> }
-function Pager({ page, total, size, onPage }: { page: number; total: number; size: number; onPage: (page: number) => void }) { return <div className="pager"><span>{number(total)}건 · {page + 1} / {Math.max(1, Math.ceil(total / size))} 페이지</span><div><button disabled={page === 0} onClick={() => onPage(page - 1)}>이전</button><button disabled={(page + 1) * size >= total} onClick={() => onPage(page + 1)}>다음</button></div></div> }
-
 export default function App() {
   const [signedIn, setSignedIn] = useState<boolean | null>(null)
-  const [section, setSection] = useState<Section>('dashboard')
+  const route = useLocation()
+  const parts = route.pathname.split('/').filter(Boolean)
+  const postSection = parts[0] === 'posts' && Object.hasOwn(postSections, parts[1] || '') ? parts[1] as PostSection : null
+  const section = postSection || (parts[0] || 'dashboard')
+  const detail = (parts[0] === 'members' && parts.length === 2) || (!!postSection && parts.length === 3)
+  useEffect(() => {
+    document.title = `${postSection ? postSections[postSection].label : ({ members: '회원 관리', reports: '신고 현황', audit: '활동 로그' } as Record<string, string>)[section] || '운영 대시보드'}${detail ? ' 상세' : ''} · 한끗 관리자`
+    const heading = document.querySelector<HTMLElement>('main h1')
+    if (heading) { heading.tabIndex = -1; heading.focus({ preventScroll: true }) }
+  }, [route.pathname, section, detail, postSection])
   const [days, setDays] = useState(30)
   const [menu, setMenu] = useState(false)
   useEffect(() => {
@@ -255,10 +216,21 @@ export default function App() {
   async function signOut() { await logout(); setSignedIn(false) }
   if (signedIn === null) return <div className="loading-screen" role="status"><img src="/hankkt-logo.png" alt="한끗" /><p>운영자 세션을 확인하고 있습니다…</p></div>
   if (!signedIn) return <Login onLogin={() => setSignedIn(true)} />
-  const nav: { id: Section; label: string; symbol: string }[] = [
-    { id: 'dashboard', label: '대시보드', symbol: '▦' }, { id: 'members', label: '회원 관리', symbol: '♙' },
-    { id: 'reports', label: '신고 현황', symbol: '⚑' }, { id: 'audit', label: '활동 로그', symbol: '≡' },
+  const nav = [
+    { id: 'dashboard', href: '/', label: '대시보드', symbol: '▦' }, { id: 'members', href: '/members', label: '회원 관리', symbol: '♙' },
+    { id: 'services', href: '/posts/services', label: '금손 공고', symbol: '✦' }, { id: 'requests', href: '/posts/requests', label: '꾸알못 요청', symbol: '◇' },
+    { id: 'feeds', href: '/posts/feeds', label: '피드', symbol: '▤' },
+    { id: 'reports', href: '/reports', label: '신고 현황', symbol: '⚑' }, { id: 'audit', href: '/audit', label: '활동 로그', symbol: '≡' },
   ]
-  return <div className="app-shell"><aside className={`sidebar ${menu ? 'open' : ''}`}><div className="brand"><img src="/hankkt-logo.png" alt="한끗" /><span>운영 콘솔</span></div><div className="nav-heading">WORKSPACE</div><nav aria-label="관리자 메뉴">{nav.map(item => <button key={item.id} className={section === item.id ? 'active' : ''} onClick={() => { setSection(item.id); setMenu(false) }}>{icon(item.symbol)}{item.label}</button>)}</nav><div className="sidebar-bottom"><span className="online-dot" /> 운영 시스템 <small>읽기 전용 · P0</small></div></aside>
-    <div className="workspace"><header className="topbar"><button className="menu-toggle" aria-label="메뉴 열기" onClick={() => setMenu(!menu)}>☰</button><div className="topbar-title">한끗 <span>/</span> {nav.find(item => item.id === section)?.label}</div><div className="topbar-right"><span className="today">{new Intl.DateTimeFormat('ko-KR', { dateStyle: 'long', timeZone: 'Asia/Seoul' }).format(new Date())}</span><span className="avatar">운</span><button className="logout-button" onClick={signOut}>로그아웃</button></div></header><main className="main-content">{section === 'dashboard' && <DashboardView days={days} onDays={setDays} />}{section === 'members' && <MembersView />}{section === 'reports' && <ReportsView />}{section === 'audit' && <AuditView />}</main><footer>© {new Date().getFullYear()} hankkt · 운영자 전용</footer></div>{menu && <div className="mobile-backdrop" onClick={() => setMenu(false)} />}</div>
+  let content
+  if ((route.pathname === '/' || route.pathname === '/dashboard')) content = <DashboardView days={days} onDays={setDays} />
+  else if (section === 'members' && parts.length === 1) content = <MembersView search={route.search} />
+  else if (section === 'members' && detail) content = <MemberDetailView id={parts[1]} search={route.search} />
+  else if (postSection && parts.length === 2) content = <PostsView section={postSection} search={route.search} />
+  else if (postSection && detail) content = <PostDetailView section={postSection} id={parts[2]} search={route.search} />
+  else if (route.pathname === '/reports') content = <ReportsView />
+  else if (route.pathname === '/audit') content = <AuditView />
+  else content = <><div className="page-head"><h1>페이지를 찾을 수 없습니다.</h1></div><AppLink className="outline-button" href="/">대시보드로</AppLink></>
+  return <div className="app-shell"><aside className={`sidebar ${menu ? 'open' : ''}`}><div className="brand"><img src="/hankkt-logo.png" alt="한끗" /><span>운영 콘솔</span></div><div className="nav-heading">WORKSPACE</div><nav aria-label="관리자 메뉴">{nav.map(item => <AppLink key={item.id} href={item.href} aria-current={section === item.id ? 'page' : undefined} className={section === item.id ? 'active' : ''} onClick={() => setMenu(false)}>{icon(item.symbol)}{item.label}</AppLink>)}</nav><div className="sidebar-bottom"><span className="online-dot" /> 운영 시스템 <small>읽기 전용</small></div></aside>
+    <div className="workspace"><header className="topbar"><button className="menu-toggle" aria-label="메뉴 열기" aria-expanded={menu} onClick={() => setMenu(!menu)}>☰</button><div className="topbar-title">한끗 <span>/</span> {nav.find(item => item.id === section)?.label || '운영 콘솔'}{detail && <><span>/</span>상세</>}</div><div className="topbar-right"><span className="today">{new Intl.DateTimeFormat('ko-KR', { dateStyle: 'long', timeZone: 'Asia/Seoul' }).format(new Date())}</span><span className="avatar">운</span><button className="logout-button" onClick={signOut}>로그아웃</button></div></header><main key={route.pathname} className="main-content">{content}</main><footer>© {new Date().getFullYear()} hankkt · 운영자 전용</footer></div>{menu && <button className="mobile-backdrop" aria-label="메뉴 닫기" onClick={() => setMenu(false)} />}</div>
 }
