@@ -102,7 +102,7 @@ export async function resumeSession() {
   return resumed
 }
 
-export async function api<T>(path: string): Promise<T> {
+async function authorizedResponse(path: string): Promise<Response> {
   const expired = () => {
     access = null
     window.dispatchEvent(new Event('hankkt-admin-session-expired'))
@@ -119,7 +119,11 @@ export async function api<T>(path: string): Promise<T> {
     if (response.status === 401) expired()
   }
   if (response.status === 403) { await logout(); expired() }
-  return read<T>(response)
+  return response
+}
+
+export async function api<T>(path: string): Promise<T> {
+  return read<T>(await authorizedResponse(path))
 }
 
 export async function requestSms(phoneNumber: string): Promise<SmsChallenge> {
@@ -156,4 +160,26 @@ export async function logout() {
   } catch {
     // Local access is discarded even if the server cannot be reached.
   } finally { access = null; sessionStorage.removeItem(LEGACY_KEY) }
+}
+
+export type PostType = 'SERVICE' | 'REQUEST' | 'FEED'
+export type Post = {
+  id: string; authorId: string; authorName: string; authorUsername: string; authorStatus: string;
+  postType: PostType; status: string; title: string; category: string; purpose?: string; feedType?: string;
+  neighborhoodCode?: string; neighborhoodName?: string; priceAmount?: number; budgetAmount?: number;
+  negotiable: boolean; desiredAt?: string; createdAt: string; updatedAt: string; deletedAt?: string;
+  imageCount: number; saveCount: number;
+}
+export type PostDetail = {
+  post: Post;
+  content: { description: string; concept?: string; durationMinutes?: number; recommendedFor?: string;
+    preparationType?: string; useOwnProducts?: boolean; desiredTimezone?: string; hashtags?: string; productNames?: string };
+  images: { objectKey: string; displayOrder: number }[];
+  plans: { sequence: number; content: string; priceAmount?: number; negotiable: boolean }[];
+}
+
+export async function apiImage(path: string): Promise<Blob> {
+  const response = await authorizedResponse(path)
+  if (!response.ok) await read<never>(response)
+  return response.blob()
 }
